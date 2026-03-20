@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BeamNet — Interactive Presentation Guide</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "Fira Code", "Cascadia Code", Consolas, monospace;
+    --bg: #ffffff;
+    --bg2: #f5f5f5;
+    --bg3: #ececec;
+    --border: rgba(0,0,0,0.12);
+    --border2: rgba(0,0,0,0.22);
+    --text: #1a1a1a;
+    --text2: #555;
+    --text3: #888;
+    --info-bg: #e8f4fd; --info: #1565c0;
+    --success-bg: #e8f5e9; --success: #2e7d32;
+    --warn-bg: #fff8e1; --warn: #e65100;
+    --danger-bg: #fce4ec; --danger: #c62828;
+    --radius-md: 8px; --radius-lg: 12px;
+    --teal: #0F6E56; --teal-bg: #E1F5EE; --teal-fg: #0F6E56;
+    --purple-bg: #EEEDFE; --purple-fg: #3C3489;
+    --amber-bg: #FAEEDA; --amber-fg: #854F0B;
+    --gray-bg: #F1EFE8; --gray-fg: #5F5E5A;
+    --green-bg: #E1F5EE; --green-fg: #0F6E56;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a; --bg2: #242424; --bg3: #2e2e2e;
+      --border: rgba(255,255,255,0.10); --border2: rgba(255,255,255,0.20);
+      --text: #e8e8e8; --text2: #aaa; --text3: #666;
+      --info-bg: #0d2a45; --info: #64b5f6;
+      --success-bg: #1b3a1f; --success: #81c784;
+      --warn-bg: #2d1f00; --warn: #ffb74d;
+      --danger-bg: #3a0f1a; --danger: #ef9a9a;
+      --teal-bg: #04342C; --teal-fg: #5DCAA5;
+      --purple-bg: #26215C; --purple-fg: #AFA9EC;
+      --amber-bg: #412402; --amber-fg: #FAC775;
+      --gray-bg: #2C2C2A; --gray-fg: #B4B2A9;
+      --green-bg: #04342C; --green-fg: #5DCAA5;
+    }
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  header {
+    background: var(--bg);
+    border-bottom: 0.5px solid var(--border);
+    padding: 18px 32px 14px;
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 17px; font-weight: 500; color: var(--text); }
+  header p  { font-size: 12px; color: var(--text3); margin-top: 2px; }
+
+  .container { max-width: 820px; margin: 0 auto; padding: 24px 24px 60px; }
+
+  .tab-bar { display: flex; gap: 6px; padding: 0 0 20px; flex-wrap: wrap; }
+  .tab {
+    padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 500;
+    border: 0.5px solid var(--border2); cursor: pointer;
+    background: transparent; color: var(--text2); transition: all .15s;
+    font-family: var(--font-sans);
+  }
+  .tab.active { background: var(--text); color: var(--bg); border-color: transparent; }
+  .tab:hover:not(.active) { background: var(--bg2); }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .card {
+    background: var(--bg2);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
+    margin-bottom: 12px;
+  }
+  .card-accent {
+    border-left: 3px solid var(--accent, #888);
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+    padding-left: 15px;
+  }
+
+  .layer-badge {
+    display: inline-block; font-size: 11px; font-weight: 500;
+    padding: 3px 10px; border-radius: 20px; margin-bottom: 8px;
+    background: var(--badge-bg, var(--bg3)); color: var(--badge-fg, var(--text2));
+  }
+  .layer-title { font-size: 15px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
+  .layer-sub   { font-size: 12px; color: var(--text3); margin-bottom: 10px; }
+  .layer-body  { font-size: 13px; color: var(--text2); line-height: 1.7; margin-bottom: 10px; }
+
+  .math-block {
+    background: var(--bg);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 13px 15px;
+    margin: 10px 0;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--text);
+    line-height: 1.85;
+    overflow-x: auto;
+  }
+  .math-label {
+    font-family: var(--font-sans);
+    font-size: 11px; font-weight: 500; color: var(--text3);
+    text-transform: uppercase; letter-spacing: .05em;
+    margin-bottom: 7px;
+  }
+  .hl-g  { color: #0F6E56; font-weight: 500; }
+  .hl-b  { color: #185FA5; font-weight: 500; }
+  .hl-r  { color: #993C1D; font-weight: 500; }
+  .hl-p  { color: #534AB7; font-weight: 500; }
+  .muted { color: var(--text3); }
+
+  /* Q&A */
+  .qa-tag {
+    display: inline-block; font-size: 10px; font-weight: 500;
+    padding: 2px 9px; border-radius: 10px; margin-bottom: 8px;
+  }
+  .tag-arch     { background: var(--info-bg);    color: var(--info); }
+  .tag-training { background: var(--success-bg); color: var(--success); }
+  .tag-design   { background: var(--warn-bg);    color: var(--warn); }
+  .tag-hard     { background: var(--danger-bg);  color: var(--danger); }
+
+  .qa-q {
+    font-size: 13px; font-weight: 500; color: var(--text);
+    cursor: pointer; user-select: none;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  }
+  .qa-q .arrow { color: var(--text3); transition: transform .2s; flex-shrink: 0; margin-top: 1px; }
+  .qa-q.open .arrow { transform: rotate(180deg); }
+  .qa-a {
+    font-size: 13px; color: var(--text2); line-height: 1.7;
+    padding-top: 12px; margin-top: 10px;
+    border-top: 0.5px solid var(--border);
+  }
+  .collapsible { display: none; }
+  .collapsible.open { display: block; }
+
+  /* Guide */
+  .tip-label { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
+  .tip-text  { font-size: 13px; color: var(--text2); line-height: 1.68; }
+  .timing-row { margin-bottom: 4px; }
+  .timing-row span:first-child { font-weight: 500; color: var(--text); }
+
+  .section-heading {
+    font-size: 11px; font-weight: 500; color: var(--text3);
+    text-transform: uppercase; letter-spacing: .05em;
+    margin: 0 0 10px;
+  }
+  hr.div { border: none; border-top: 0.5px solid var(--border); margin: 18px 0 14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BeamNet — Interactive Presentation Guide</h1>
+  <p>Layer-by-layer mathematics · Q&amp;A preparation · Presenter guide</p>
+</header>
+
+<div class="container">
+
+  <div class="tab-bar">
+    <button class="tab active" onclick="show('math', this)">Layer-by-layer math</button>
+    <button class="tab" onclick="show('qa', this)">Q&amp;A prep</button>
+    <button class="tab" onclick="show('guide', this)">Presenter guide</button>
+  </div>
+
+  <!-- ══════════════════ MATH ══════════════════ -->
+  <div id="math" class="section active">
+
+    <!-- Input -->
+    <div class="card card-accent" style="--accent:#888780;">
+      <div>
+        <span class="layer-badge" style="--badge-bg:var(--gray-bg);--badge-fg:var(--gray-fg);">Input</span>
+        <div class="layer-title">Normalized MVDR spectrum</div>
+        <div class="layer-sub">Shape: (B, 1, 180)</div>
+      </div>
+      <div class="layer-body">
+        The raw MVDR power at each of 180 degree bins is collected into a vector, then standardized before entering the network.
+      </div>
+      <div class="math-block">
+        <div class="math-label">Normalization</div>
+        x_norm = (x − μ) / (σ + ε)<br>
+        <span class="hl-g">μ</span> = dataset mean (estimated on 10k subsample)<br>
+        <span class="hl-g">σ</span> = dataset std,&nbsp; ε = 1e-8 for numerical safety<br><br>
+        <span class="muted">Why? MVDR values are in arbitrary dB-like units.</span><br>
+        <span class="muted">Standardizing centers gradients near zero → faster convergence.</span>
+      </div>
+    </div>
+
+    <!-- MultiScaleFusion -->
+    <div class="card card-accent" style="--accent:#1D9E75;">
+      <span class="layer-badge" style="--badge-bg:var(--teal-bg);--badge-fg:var(--teal-fg);">Block 1</span>
+      <div class="layer-title">MultiScaleFusion — entry block</div>
+      <div class="layer-sub">3 parallel convolutions → concat → BN → GELU</div>
+      <div class="layer-body">
+        Three 1D convolutions with different kernel sizes run in parallel, each capturing a different angular scale.
+        Their outputs are concatenated into a 64-channel feature tensor.
+      </div>
+      <div class="math-block">
+        <div class="math-label">Three parallel branches</div>
+        <span class="hl-g">F₃</span>&nbsp; = Conv1d(x; W₃,&nbsp; k=3,&nbsp; p=1) &nbsp;∈ ℝ<sup>B×21×180</sup><br>
+        <span class="hl-b">F₇</span>&nbsp; = Conv1d(x; W₇,&nbsp; k=7,&nbsp; p=3) &nbsp;∈ ℝ<sup>B×21×180</sup><br>
+        <span class="hl-r">F₁₅</span> = Conv1d(x; W₁₅, k=15, p=7) ∈ ℝ<sup>B×22×180</sup><br><br>
+        z = Concat[<span class="hl-g">F₃</span>; <span class="hl-b">F₇</span>; <span class="hl-r">F₁₅</span>]  ∈ ℝ<sup>B×64×180</sup><br>
+        z = BatchNorm1d(z)<br>
+        z = GELU(z)
+      </div>
+      <div class="math-block">
+        <div class="math-label">BatchNorm1d</div>
+        ẑ = (z − μ<sub>B</sub>) / √(σ²<sub>B</sub> + ε)<br>
+        out = γ·ẑ + β &nbsp;&nbsp; (γ, β are learnable per-channel scalars)<br><br>
+        <span class="muted">Computed over the batch dimension. Stabilizes training by</span><br>
+        <span class="muted">keeping activations unit-scaled between blocks.</span>
+      </div>
+      <div class="math-block">
+        <div class="math-label">GELU activation</div>
+        φ(z) = z · Φ(z) &nbsp;&nbsp; where Φ = Gaussian CDF<br>
+        ≈ z · σ(1.702z) &nbsp;&nbsp; (fast approximation used in practice)<br><br>
+        <span class="muted">Unlike ReLU, GELU is smooth and non-zero for all z.</span><br>
+        <span class="muted">Non-zero gradient everywhere → better flow in deep nets.</span>
+      </div>
+    </div>
+
+    <!-- DilatedResBlock -->
+    <div class="card card-accent" style="--accent:#534AB7;">
+      <span class="layer-badge" style="--badge-bg:var(--purple-bg);--badge-fg:var(--purple-fg);">Blocks 2–7</span>
+      <div class="layer-title">DilatedResBlock ×6</div>
+      <div class="layer-sub">Dilations d = 1, 2, 4, 8, 16, 1</div>
+      <div class="layer-body">
+        Six residual blocks with increasing dilation. Each block has two dilated convolutions in its branch;
+        the original input is added back (residual) before the final activation.
+      </div>
+      <div class="math-block">
+        <div class="math-label">Dilated convolution — core formula</div>
+        y[n] = Σ<sub>k=0</sub><sup>K−1</sup> x[n + d·k] · w[k]<br><br>
+        <span class="hl-p">d</span> = dilation factor (how far apart the taps are)<br>
+        <span class="hl-p">K</span> = kernel size (= 3 throughout)<br><br>
+        Effective receptive field per single layer:<br>
+        r = 1 + 2·d·(K−1) &nbsp;→&nbsp; d=1:5° &nbsp;d=2:9° &nbsp;d=4:17° &nbsp;d=8:33° &nbsp;d=16:65°
+      </div>
+      <div class="math-block">
+        <div class="math-label">Full block forward pass</div>
+        h₁ &nbsp;= GELU( BN( DilConv<sub>d</sub>(x, W₁) ) )<br>
+        h₂ &nbsp;= BN( DilConv<sub>d</sub>(h₁, W₂) )<br>
+        out = <span class="hl-g">GELU( x + h₂ )</span> &nbsp;&nbsp; ← residual add then activate<br><br>
+        <span class="muted">Residual gradient: ∂L/∂x = ∂L/∂out · (1 + ∂h₂/∂x)</span><br>
+        <span class="muted">The "+1" prevents vanishing gradients even at depth 6.</span>
+      </div>
+      <div class="math-block">
+        <div class="math-label">Cumulative receptive field (6 stacked blocks)</div>
+        5 + 9 + 17 + 33 + 65 + 5 ≈ <span class="hl-g">134° effective angular span</span><br><br>
+        <span class="muted">A sidelobe 50° away from the mainlobe falls inside the RF.</span><br>
+        <span class="muted">The old model (RF≈9°) could not see it at all.</span>
+      </div>
+    </div>
+
+    <!-- ChannelAttention -->
+    <div class="card card-accent" style="--accent:#BA7517;">
+      <span class="layer-badge" style="--badge-bg:var(--amber-bg);--badge-fg:var(--amber-fg);">Blocks 8, 10, 12</span>
+      <div class="layer-title">ChannelAttention (SE gate) ×3</div>
+      <div class="layer-sub">Applied after encoder pairs 1–2, 3–4, 5–6</div>
+      <div class="layer-body">
+        Squeeze-and-Excitation attention: collapses all 180 spatial positions into a single importance score
+        per channel, then rescales each channel by its score.
+      </div>
+      <div class="math-block">
+        <div class="math-label">Step 1 — Squeeze (global average pool)</div>
+        s<sub>c</sub> = (1/L) · Σ<sub>l=1</sub><sup>L</sup> z[c, l] &nbsp;&nbsp; L=180<br>
+        s ∈ ℝ<sup>64</sup> &nbsp;&nbsp; (one scalar per channel)
+      </div>
+      <div class="math-block">
+        <div class="math-label">Step 2 — Excitation (bottleneck MLP)</div>
+        e = σ( W₂ · GELU( W₁ · s ) )<br>
+        W₁ ∈ ℝ<sup>16×64</sup>,&nbsp; W₂ ∈ ℝ<sup>64×16</sup> &nbsp; (reduction r=4)<br>
+        e ∈ [0,1]<sup>64</sup> &nbsp;&nbsp; (importance score per channel)
+      </div>
+      <div class="math-block">
+        <div class="math-label">Step 3 — Scale (channel-wise broadcast)</div>
+        z̃[c, :] = e<sub>c</sub> · z[c, :]<br><br>
+        <span class="muted">Full expression:</span><br>
+        z̃ = z ⊙ σ( W₂ · GELU( W₁ · GAP(z) ) ).unsqueeze(−1)<br><br>
+        <span class="muted">Channels responding to noise get e≈0 → suppressed.</span><br>
+        <span class="muted">Channels detecting peaks get e≈1 → amplified.</span>
+      </div>
+    </div>
+
+    <!-- Output head -->
+    <div class="card card-accent" style="--accent:#0F6E56;">
+      <span class="layer-badge" style="--badge-bg:var(--green-bg);--badge-fg:var(--green-fg);">Output</span>
+      <div class="layer-title">Output head + Sigmoid</div>
+      <div class="layer-sub">Shape: (B, 1, 180) → predictions ∈ (0, 1)</div>
+      <div class="math-block">
+        <div class="math-label">Head layers</div>
+        z₁ = GELU( Conv1d(z, 64→32, k=3, p=1) )<br>
+        z₂ = Conv1d(z₁, 32→1, k=1) &nbsp;&nbsp; (pointwise projection)<br>
+        ŷ &nbsp;= σ(z₂) = 1 / (1 + e<sup>−z₂</sup>) &nbsp;∈ (0,1)<sup>180</sup>
+      </div>
+      <div class="math-block">
+        <div class="math-label">BeamLoss = α·MSE + (1−α)·FocalBCE</div>
+        MSE &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= (1/N) Σ (ŷ − y)²<br><br>
+        FocalBCE:<br>
+        &nbsp;&nbsp;w<sub>i</sub> &nbsp;= pos_weight &nbsp;if y<sub>i</sub>=1,&nbsp; else 1<br>
+        &nbsp;&nbsp;pt<sub>i</sub> = ŷ<sub>i</sub> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;if y<sub>i</sub>=1,&nbsp; else (1−ŷ<sub>i</sub>)<br>
+        &nbsp;&nbsp;L<sub>i</sub> &nbsp;= −w<sub>i</sub>·(1−pt<sub>i</sub>)<sup>γ</sup>·log(pt<sub>i</sub>)<br><br>
+        α=0.5,&nbsp; γ=2.0,&nbsp; pos_weight=100<br><br>
+        <span class="muted">pos_weight=100 ≈ (179 zero bins) / (1 peak bin).</span><br>
+        <span class="muted">Focal γ=2 down-weights easy negatives and focuses training</span><br>
+        <span class="muted">on the hard positives near decision boundaries.</span>
+      </div>
+    </div>
+
+  </div><!-- /math -->
+
+  <!-- ══════════════════ Q&A ══════════════════ -->
+  <div id="qa" class="section">
+
+    <p style="font-size:12px;color:var(--text3);margin-bottom:16px;">Click any question to expand the answer.</p>
+
+    <div class="section-heading">Architecture</div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-arch">architecture</span>
+      <div class="qa-q" onclick="toggle('q1', this)">
+        Why dilated convolutions instead of pooling + upsampling (U-Net style)?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q1" class="collapsible">
+        <div class="qa-a">Pooling discards spatial position — critical for 1° angular resolution. If you pool and upsample, your output can be off by several bins. Dilation expands the receptive field without removing any positional information. Since knowing the exact angle bin is the entire point of the task, L=180 must be maintained throughout. U-Net is the right choice when you need to localize features at multiple resolutions (e.g. segmentation). Here, there is only one resolution: degree bins.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-arch">architecture</span>
+      <div class="qa-q" onclick="toggle('q2', this)">
+        Why not a Transformer or LSTM for the 180-element angular sequence?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q2" class="collapsible">
+        <div class="qa-a">The sequence is short (L=180). Transformers have O(L²) attention cost and require positional encoding because they have no inductive bias for locality. LSTMs are sequential — slow on GPU and they struggle with long-range structure unless carefully tuned. Dilated CNNs achieve comparable or larger receptive fields at O(L) cost, are fully parallelizable, and have a built-in local-to-global hierarchy that matches the angular structure of beamformer spectra. For L=180, the CNN wins on every axis: speed, memory, and inductive bias.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-arch">architecture</span>
+      <div class="qa-q" onclick="toggle('q3', this)">
+        Why BatchNorm1d specifically — not LayerNorm or GroupNorm?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q3" class="collapsible">
+        <div class="qa-a">BatchNorm computes statistics over the batch dimension, which works well with large fixed-length inputs (batch=512, length=180 — statistics are stable). LayerNorm normalizes per sample, which is better for variable-length sequences where batch statistics are noisy (e.g. NLP). GroupNorm is designed for small batches (e.g. in object detection) where BatchNorm statistics are unreliable. Neither of those conditions applies here, so BatchNorm is the correct and fastest choice.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <span class="qa-tag tag-arch">architecture</span>
+      <div class="qa-q" onclick="toggle('q4', this)">
+        What does channel attention actually learn to do?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q4" class="collapsible">
+        <div class="qa-a">The SE gate learns to assign high importance scores (e≈1) to feature channels that activate strongly on sharp mainlobe peak patterns, and low scores (e≈0) to channels that respond to noise and diffuse sidelobe structure. This is feature selection without any explicit supervision — the gradient flows back through the gate weights and teaches it which channels are useful for predicting the sparse target. Applied 3× at progressively larger receptive field scales, each gate refines the selection at a different angular scale.</div>
+      </div>
+    </div>
+
+    <div class="section-heading">Training &amp; Loss</div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-training">training</span>
+      <div class="qa-q" onclick="toggle('q5', this)">
+        Won't MSE/L1 work fine with 500k training samples?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q5" class="collapsible">
+        <div class="qa-a">No — and more data makes this worse, not better. With ~1 positive per 180 bins, the gradient from the 179 zero-target bins dominates every update. The global loss minimum under MSE is simply "predict zero everywhere" (loss ≈ 1/180 ≈ 0.006). The network converges to this trivial solution quickly and stays there. More data just reinforces it. You need a loss that makes getting the peaks wrong disproportionately expensive — that is exactly what pos_weight=100 achieves in the focal BCE term.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-training">training</span>
+      <div class="qa-q" onclick="toggle('q6', this)">
+        How do you choose pos_weight=100? What if you have multiple simultaneous targets?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q6" class="collapsible">
+        <div class="qa-a">Rule of thumb: pos_weight ≈ (number of negative bins) / (number of positive bins). For 1 target in 180 bins: 179/1 ≈ 100. For 3 simultaneous targets: 177/3 ≈ 59. In practice, monitor validation precision and recall — if recall is low (missing peaks), increase pos_weight; if precision is low (too many false peaks), decrease it. The focal exponent γ=2 additionally down-weights easy negatives (background confidently predicted at ≈0) so training focuses on the hard positives near decision boundaries.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <span class="qa-tag tag-training">training</span>
+      <div class="qa-q" onclick="toggle('q7', this)">
+        Why AdamW over Adam? Why CosineAnnealing?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q7" class="collapsible">
+        <div class="qa-a">Adam's L2 regularization is not true weight decay — the gradient scaling by the adaptive second moment means large-gradient parameters receive proportionally less regularization than intended. AdamW decouples weight decay from gradient scaling, making it consistent across all parameters. CosineAnnealing avoids sudden LR drops (which can cause loss spikes) and smoothly decays from 1e-3 to 1e-5 over 50 epochs. With 500k samples at batch=512, each epoch sees ~976 gradient steps — the slow decay allows the optimizer to settle into a flat minimum.</div>
+      </div>
+    </div>
+
+    <div class="section-heading">Challenging / Critical</div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-hard">challenging</span>
+      <div class="qa-q" onclick="toggle('q8', this)">
+        Can this resolve two targets that are only 1–2° apart?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q8" class="collapsible">
+        <div class="qa-a">The resolution ceiling is the bin resolution of the input (1°/bin). If the training data includes cases where two adjacent bins are both 1, the network can learn to output two separate peaks — the k=3 branch in the entry block is designed for exactly this fine-scale structure. However, if the MVDR input itself cannot separate two sources that close (its resolution depends on array aperture and SNR), then BeamNet cannot recover information that was already lost in the input. The limiting factor is MVDR resolution, not the neural network.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-hard">challenging</span>
+      <div class="qa-q" onclick="toggle('q9', this)">
+        What are the known failure modes of BeamNet?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q9" class="collapsible">
+        <div class="qa-a">Three main failure modes: (1) False peaks at low SNR — strong sidelobes can fool the channel attention into amplifying them, producing spurious predictions. (2) Edge-angle degradation — targets at 1° or 180° have asymmetric context (dilation taps fall outside the array), so peak sharpness may be reduced near boundaries; zero-padding partially compensates. (3) Over-smoothing — if α is set too high (too much MSE weight), output peaks become blurred rather than sharp. Monitor precision and recall at a 0.5 threshold on validation data to catch all three.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-hard">challenging</span>
+      <div class="qa-q" onclick="toggle('q10', this)">
+        How does the model generalize to SNR values outside the training range?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q10" class="collapsible">
+        <div class="qa-a">Two mechanisms help. First, input normalization standardizes absolute power levels — the network sees the shape of the spectrum, not its scale. Second, BatchNorm statistics are computed per-batch, providing additional implicit normalization that makes the model less sensitive to absolute amplitude. However, if the test SNR is far outside the training distribution, sidelobe patterns may look qualitatively different and the model may fail. The recommended mitigation is to include the full expected SNR range in training, and optionally apply test-time normalization per sample instead of global training statistics.</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <span class="qa-tag tag-hard">challenging</span>
+      <div class="qa-q" onclick="toggle('q11', this)">
+        Why not a diffusion model or generative approach for this task?
+        <span class="arrow">▾</span>
+      </div>
+      <div id="q11" class="collapsible">
+        <div class="qa-a">Diffusion models are stochastic at inference — they introduce random noise and then denoise. For angle estimation, you want a deterministic output: the same input should always map to the same predicted angle. Stochasticity adds uncertainty without benefit. Additionally, diffusion requires many forward passes (often 10–1000 denoising steps) at inference time, making it orders of magnitude slower than a single BeamNet forward pass. BeamNet gives you a deterministic prediction in one O(L) pass — ideal for real-time or near-real-time beamforming applications.</div>
+      </div>
+    </div>
+
+  </div><!-- /qa -->
+
+  <!-- ══════════════════ GUIDE ══════════════════ -->
+  <div id="guide" class="section">
+
+    <p style="font-size:12px;color:var(--text3);margin-bottom:16px;">How to handle each part of your presentation — what to say, what to draw, what to expect.</p>
+
+    <div class="card" style="margin-bottom:8px;">
+      <div class="tip-label">Opening — set the problem first</div>
+      <div class="tip-text">Don't open with architecture. Open with the tension: "MVDR gives us a power value for every angle from 1° to 180°. The problem is sidelobes — false peaks that look like real sources. We trained a neural network to clean this up." Draw a rough 1×180 bar chart on the board: tall bar at the true angle, smaller bars scattered elsewhere. Ask: "How do you know which peak is real?" That question motivates everything.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <div class="tip-label">Explaining the architecture pipeline</div>
+      <div class="tip-text">Walk left to right: Input → MultiScaleFusion → DilatedResBlocks ×6 → ChannelAttention ×3 → Output. For each block, lead with one sentence of intuition before showing math. For dilation, draw expanding circles on the board: "d=1 sees 5°, d=2 sees 9°, d=4 sees 17°…" — make the receptive field growth visible, not just numerical.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <div class="tip-label">Presenting the math — what to say vs. what to write</div>
+      <div class="tip-text">Never read equations out loud. For each formula, name the variables first. For dilated conv: "x[n + d·k] means we skip d bins between each kernel tap — so at d=8, our 3-tap kernel spans 16 bins." For attention: "s_c is the average activation of channel c across all 180 angles — we're asking: is this channel globally active?" Write the formula on the board after the explanation, not before.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <div class="tip-label">The loss slide — make the sparsity problem visceral</div>
+      <div class="tip-text">Ask the audience: "If your target is [0, 0, 0, 1, 0, …, 0], what does a network learn if you use mean squared error?" Pause. Then reveal: it predicts all zeros and gets MSE = 1/180 ≈ 0.006 — not bad by MSE standards, but completely useless. That's why we need pos_weight=100. The focal term is the follow-up: "We also want to focus training on the hard cases — the background bins the model is already getting right don't need more gradient."</div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <div class="tip-label">The comparison table — let it do the work</div>
+      <div class="tip-text">Don't narrate every row. Say: "Every row in this table is a deliberate design choice, not a default." Then walk through the two most impactful ones: receptive field (9° vs 130°) and loss function (L1 vs focal BCE). For the others, say "I'm happy to go deeper on any of these" — it signals confidence and invites questions rather than forcing content on the audience.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <div class="tip-label">Handling Q&amp;A — the three answers to memorize</div>
+      <div class="tip-text">Prepare 2-sentence answers for: (1) "Why not a Transformer?" — cost is O(L²) and locality inductive bias is lost; CNN is O(L) and architecturally matched. (2) "Why not U-Net?" — pooling loses positional precision; we need to know the exact degree bin. (3) "Why not just use more L1 data?" — sparsity collapse is a mathematical property of the loss landscape, not a data problem. Having these locked in lets you answer instantly and pivot to the next question.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:8px;">
+      <div class="tip-label">If asked something you don't know</div>
+      <div class="tip-text">"That's a good direction I haven't benchmarked yet — the next experiment I'd run is X" is stronger than guessing. For BeamNet: if asked about real-time latency, you can say "inference is a single forward pass on a 180-element vector — on GPU it's microseconds; I haven't profiled exact numbers yet." Honesty + next step = credibility.</div>
+    </div>
+
+    <div class="card" style="margin-bottom:0;">
+      <div class="tip-label">Timing guide (15-minute talk)</div>
+      <div class="tip-text">
+        <div class="timing-row"><span>0–2 min: </span>Problem statement — what is MVDR, what goes wrong, what's the target</div>
+        <div class="timing-row"><span>2–4 min: </span>Architecture overview — pipeline diagram, one sentence per block</div>
+        <div class="timing-row"><span>4–9 min: </span>Layer-by-layer math — MultiScaleFusion, DilatedResBlock, ChannelAttention</div>
+        <div class="timing-row"><span>9–11 min: </span>Loss function — sparsity problem, BeamLoss breakdown</div>
+        <div class="timing-row"><span>11–13 min: </span>Comparison table + training setup</div>
+        <div class="timing-row"><span>13–15 min: </span>Q&amp;A buffer</div>
+      </div>
+    </div>
+
+  </div><!-- /guide -->
+
+</div><!-- /container -->
+
+<script>
+function show(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+function toggle(id, btn) {
+  const el = document.getElementById(id);
+  const isOpen = el.classList.contains('open');
+  document.querySelectorAll('.collapsible').forEach(c => c.classList.remove('open'));
+  document.querySelectorAll('.qa-q').forEach(q => q.classList.remove('open'));
+  if (!isOpen) { el.classList.add('open'); btn.classList.add('open'); }
+}
+</script>
+</body>
+</html>
