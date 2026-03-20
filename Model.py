@@ -8,7 +8,7 @@ import h5py
 import numpy as np
 from random import sample
 import os
-
+from Essentials import BeamDataset,BeamLoss
 # ===============================
 # Device
 # ===============================
