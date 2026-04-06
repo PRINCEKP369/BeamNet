@@ -1,0 +1,416 @@
+/*
+ * DSBF_RT.c  –  Real-time STFT Delay-and-Sum Beamformer
+ *
+ * Scenario
+ * ─────────────────────────────────────────────────────────────────────────
+ *  Each processing cycle receives NSAMPLES=1024 new samples per sensor.
+ *  DataPrev[NSENSORS][OVRL] holds the last OVRL=512 samples from the
+ *  previous cycle and is prepended so that every block has valid history.
+ *
+ *  Combined buffer layout:  data[NSENSORS][NSAMPLES+OVRL]
+ *    data[m][0 .. OVRL-1]          ← DataPrev  (512 samples)
+ *    data[m][OVRL .. OVRL+NSAMPLES-1] ← new live data (1024 samples)
+ *
+ * Block layout
+ * ─────────────────────────────────────────────────────────────────────────
+ *  NFFT  = 1024   FFT points per block
+ *  OVRL  = 512    overlap (= samples borrowed from previous cycle/block)
+ *  HOP   = 512    = NFFT - OVRL   (new samples per block)
+ *  NB    = 2      = NSAMPLES / HOP = 1024 / 512
+ *
+ *  Block b starts at sample index b*HOP in data[m][]:
+ *    block 0: data[m][0   .. 1023]   (512 from DataPrev + 512 new)
+ *    block 1: data[m][512 .. 1535]
+ *    ...
+ *    block 19: data[m][9728 .. 10751]
+ *
+ * Frequency bins (re NFFT=1024)
+ * ─────────────────────────────────────────────────────────────────────────
+ *  SBIN = FL*NFFT/FS = 2000*1024/12800 = 160
+ *  EBIN = FH*NFFT/FS = 4000*1024/12800 = 320
+ *  NBIN = 161
+ *
+ * Pipeline per thread (angle slice)
+ * ─────────────────────────────────────────────────────────────────────────
+ *  1. For each block b:
+ *       Delay-and-sum across sensors using pre-computed W[a][k][m]
+ *       → beam_fd[b][0..NFFT-1]  (complex, only SBIN..EBIN filled)
+ *  2. IFFT each block  → beam_td[b][0..NFFT-1]  (real, length 1024)
+ *  3. Discard first OVRL=512 samples (overlap prefix)
+ *       keep beam_td[b][OVRL .. NFFT-1]  → HOP=512 samples
+ *  4. Concatenate all NB=2 blocks:
+ *       beam_time[a][b*HOP .. (b+1)*HOP-1] = beam_td[b][OVRL..]
+ *       → shape [NANGLES][NB][HOP] = [180][2][512], stored flat as [180][1024]
+ *  5. Power = sum(s²) / NSAMPLES  accumulated during step 4
+ *
+ * Outputs
+ * ─────────────────────────────────────────────────────────────────────────
+ *  beam_time[NANGLES][NSAMPLES]  → "beam_time"  (180×1024 doubles)
+ *  pwr[NANGLES]                  → "debugd"     (180 doubles)
+ *
+ * Compile
+ * ─────────────────────────────────────────────────────────────────────────
+ *  gcc -O3 -march=native -ffast-math -o dsbf_rt DSBF_RT.c \
+ *      -I/opt/homebrew/include -L/opt/homebrew/lib \
+ *      -lfftw3 -lpthread -lm
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include </opt/homebrew/include/fftw3.h>
+#include <time.h>
+#include <pthread.h>
+#include <unistd.h>
+
+/* ── dimensions ──────────────────────────────────────────────────────────── */
+#define NSAMPLES  10240
+#define NSENSORS    384
+#define NANGLES     180
+
+/* ── physical parameters ─────────────────────────────────────────────────── */
+#define FS    12800.0
+#define C      1500.0
+#define D         0.245
+
+/* ── band limits ─────────────────────────────────────────────────────────── */
+#define FL    2000.0
+#define FH    4000.0
+
+/* ── STFT parameters ─────────────────────────────────────────────────────── */
+#define NFFT   4096
+#define OVRL    1536
+#define HOP    (NFFT - OVRL)          /* = 512                               */
+#define NB     (NSAMPLES / HOP)       /* = 1024/512 = 2 blocks             */
+
+/* ── frequency bins (based on NFFT=1024, FS=12800) ──────────────────────── */
+#define SBIN   ((int)(FL * NFFT / FS))    /* = 160 */
+#define EBIN   ((int)(FH * NFFT / FS))    /* = 320 */
+#define NBIN   (EBIN - SBIN + 1)          /* = 161 */
+
+/* ── one-sided FFT size ──────────────────────────────────────────────────── */
+#define NFREQS (NFFT / 2 + 1)             /* = 513  (r2c output)             */
+
+/* ── combined data buffer: DataPrev prefix + live data ──────────────────── */
+/*    data[m][0..OVRL-1]          = DataPrev (512 prev samples)              */
+/*    data[m][OVRL..OVRL+NSAMPLES-1] = new live data (1024 samples)         */
+static double data[NSENSORS][NSAMPLES + OVRL];
+
+/*
+ * STFT spectra: [block][bin][sensor]
+ * Inner dim = NSENSORS so the beamform inner loop (over sensors at fixed
+ * block+bin) is a sequential read → cache-friendly.
+ * Using one-sided (r2c) spectrum: NFREQS = 513 bins.
+ */
+static double sensor_fft_r[NB][NFREQS][NSENSORS];
+static double sensor_fft_i[NB][NFREQS][NSENSORS];
+
+/*
+ * Pre-computed steering vectors W[a*NBIN+k][m]
+ * Layout [angle*NBIN+bin_relative][sensor] — sequential over sensors.
+ */
+static double (*W_r)[NSENSORS] = NULL;
+static double (*W_i)[NSENSORS] = NULL;
+
+/*
+ * Output: beamformed time signals [NANGLES][NSAMPLES]
+ * beam_time[a][b*HOP .. (b+1)*HOP-1] = ISTFT block b, overlap removed.
+ */
+static double beam_time[NANGLES][NSAMPLES];
+
+/* power per angle */
+static double pwr[NANGLES];
+
+/*
+ * Shared inverse FFT plan, created once in main with FFTW_MEASURE.
+ * Threads use fftw_execute_dft_c2r(shared_iplan, own_in, own_out) —
+ * this is thread-safe as long as each thread has its own buffers.
+ */
+static fftw_plan shared_iplan = NULL;
+
+/* ── per-thread descriptor ───────────────────────────────────────────────── */
+typedef struct { int start_angle; int end_angle; } thread_data_t;
+
+/* ── wall-clock helper ───────────────────────────────────────────────────── */
+static double wall_sec(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec + ts.tv_nsec * 1e-9;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Beamform + ISTFT thread
+ *
+ * Each thread owns a slice of angles [start_angle, end_angle).
+ * For each angle:
+ *   for each block b:
+ *     1. Delay-and-sum → beam_fd[0..NFFT-1] complex  (only SBIN..EBIN filled)
+ *     2. IFFT           → beam_td[0..NFFT-1] real
+ *     3. Strip overlap  → keep beam_td[OVRL..NFFT-1]  (HOP=512 samples)
+ *     4. Write into beam_time[a][b*HOP..(b+1)*HOP-1]
+ *     5. Accumulate power
+ * ════════════════════════════════════════════════════════════════════════════ */
+static void *beamform_thread(void *arg)
+{
+    const thread_data_t *t = (const thread_data_t *)arg;
+
+    /*
+     * Thread-local buffers only — plan is shared (created once in main).
+     * fftw_execute_dft_c2r is thread-safe when each thread passes its own
+     * input/output buffers via the new-array execute API.
+     */
+    fftw_complex *beam_fd = fftw_malloc(sizeof(fftw_complex) * NFREQS);
+    double       *beam_td = fftw_malloc(sizeof(double)       * NFFT);
+
+    for (int a = t->start_angle; a < t->end_angle; a++) {
+
+        double power = 0.0;
+
+        for (int b = 0; b < NB; b++) {
+
+            /* ── 1. Delay-and-sum in frequency domain ── */
+
+            /* Zero the full spectrum first (bins outside band stay 0) */
+            memset(beam_fd, 0, NFREQS * sizeof(fftw_complex));
+
+            for (int k = 0; k < NBIN; k++) {
+
+                /* Cache-friendly pointers: [block][bin][sensor] layout */
+                const double *xr = sensor_fft_r[b][k + SBIN];  /* [NSENSORS] */
+                const double *xi = sensor_fft_i[b][k + SBIN];  /* [NSENSORS] */
+
+                /* Steering vector for this (angle, relative bin) */
+                const double *wr = W_r[a * NBIN + k];           /* [NSENSORS] */
+                const double *wi = W_i[a * NBIN + k];           /* [NSENSORS] */
+
+                double real_sum = 0.0;
+                double imag_sum = 0.0;
+
+                /* Pure multiply-adds → auto-vectorised with -O3 -march=native */
+                for (int m = 0; m < NSENSORS; m++) {
+                    real_sum += xr[m] * wr[m] - xi[m] * wi[m];
+                    imag_sum += xr[m] * wi[m] + xi[m] * wr[m];
+                }
+
+                beam_fd[k + SBIN][0] = real_sum;
+                beam_fd[k + SBIN][1] = imag_sum;
+            }
+
+            /* ── 2. ISTFT: inverse real FFT ── */
+            fftw_execute_dft_c2r(shared_iplan, beam_fd, beam_td);
+
+            /*
+             * FFTW c2r is unnormalised: divide by NFFT.
+             * Rectangular window: no window multiplication needed.
+             *
+             * ── 3. Strip overlap prefix, write HOP samples ──
+             *
+             * The first OVRL=512 samples of beam_td come from the DataPrev
+             * overlap region and are discarded.  Only beam_td[OVRL..NFFT-1]
+             * (= HOP=512 samples) represent new output for this block.
+             *
+             * Stored into beam_time[a][b*HOP .. (b+1)*HOP-1]:
+             *   block 0 → beam_time[a][0   .. 511]
+             *   block 1 → beam_time[a][512 .. 1023]
+             *   ...
+             *   block 19 → beam_time[a][9728 .. 10239]
+             *
+             * Final shape: beam_time[NANGLES][NB * HOP] = [180][1024]
+             * which equals [180][20][512] logically.
+             *
+             * ── 4+5. Write + accumulate power ──
+             */
+            double *dst = beam_time[a] + b * HOP;
+
+            for (int n = 0; n < HOP; n++) {
+                double s = beam_td[OVRL + n] / NFFT;   /* normalise + strip */
+                dst[n]   = s;
+                power   += s * s;
+            }
+        }
+
+        pwr[a] = power / NSAMPLES;
+    }
+
+    fftw_free(beam_fd);
+    fftw_free(beam_td);
+
+    return NULL;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * main
+ * ════════════════════════════════════════════════════════════════════════════ */
+int main(void)
+{
+    printf("DSBF_RT  NFFT=%d  OVRL=%d  HOP=%d  NB=%d\n", NFFT, OVRL, HOP, NB);
+    printf("  SBIN=%d  EBIN=%d  NBIN=%d\n\n", SBIN, EBIN, NBIN);
+
+    /* ── DataPrev: in a real system this comes from the previous cycle ──── */
+    /*    Here we initialise it to zero (cold start).                        */
+    static double DataPrev[NSENSORS][OVRL];
+    memset(DataPrev, 0, sizeof(DataPrev));
+
+    /* Copy DataPrev into the first OVRL columns of data[] */
+    for (int m = 0; m < NSENSORS; m++)
+        memcpy(&data[m][0], DataPrev[m], OVRL * sizeof(double));
+
+    /* ── Read live sensor data into data[m][OVRL..OVRL+NSAMPLES-1] ──────── */
+    /*
+     * SensorData binary layout matches the original DSBF2.c:
+     *   fread(data, sizeof(double), NSAMPLES*NSENSORS, fp)
+     * where data was declared as double data[NSENSORS][NSAMPLES].
+     * Flat row-major blob: all NSAMPLES doubles for sensor 0, then sensor 1,
+     * ..., sensor 383.  Total = 384 * 1024 * 8 = 3,145,728 bytes.
+     *
+     * Read in one shot into a temporary buffer, then copy each sensor's
+     * row into data[m][OVRL..OVRL+NSAMPLES-1].
+     */
+    FILE *fp = fopen("SensorData", "rb");
+    if (!fp) { perror("SensorData"); return 1; }
+
+    double *raw = malloc(sizeof(double) * (size_t)NSENSORS * NSAMPLES);
+    if (!raw) { perror("malloc raw"); return 1; }
+
+    size_t nr = fread(raw, sizeof(double), (size_t)NSENSORS * NSAMPLES, fp);
+    fclose(fp);
+
+    if (nr != (size_t)NSENSORS * NSAMPLES) {
+        fprintf(stderr,
+            "SensorData: expected %d doubles (%zu bytes), got %zu doubles.\n"
+            "Check that the file is the correct one (384 sensors x 10240 samples).\n",
+            NSENSORS * NSAMPLES,
+            (size_t)NSENSORS * NSAMPLES * sizeof(double), nr);
+        free(raw);
+        return 1;
+    }
+
+    for (int m = 0; m < NSENSORS; m++)
+        memcpy(&data[m][OVRL], raw + (size_t)m * NSAMPLES,
+               NSAMPLES * sizeof(double));
+
+    free(raw);
+
+    /* ── STFT: FFT each (sensor, block) ─────────────────────────────────── */
+    /*
+     * Use real-to-complex (r2c) FFT: input is real, output is one-sided
+     * spectrum of NFREQS=513 complex bins.  Halves FFT work vs c2c.
+     */
+    double        *fft_in  = fftw_malloc(sizeof(double)       * NFFT);
+    fftw_complex  *fft_out = fftw_malloc(sizeof(fftw_complex) * NFREQS);
+    fftw_plan      fplan   = fftw_plan_dft_r2c_1d(NFFT, fft_in, fft_out,FFTW_MEASURE);
+
+    /* Shared inverse plan: created once, used by all threads via new-array API */
+    {
+        fftw_complex *tmp_in  = fftw_malloc(sizeof(fftw_complex) * NFREQS);
+        double       *tmp_out = fftw_malloc(sizeof(double)       * NFFT);
+        shared_iplan = fftw_plan_dft_c2r_1d(NFFT, tmp_in, tmp_out, FFTW_MEASURE);
+        fftw_free(tmp_in);
+        fftw_free(tmp_out);
+    }
+
+    double fft_t0 = wall_sec();
+
+    for (int m = 0; m < NSENSORS; m++) {
+        for (int b = 0; b < NB; b++) {
+
+            int start = b * HOP;   /* block b starts at data[m][start] */
+
+            /* Rectangular window = no multiplication, just copy */
+            for (int n = 0; n < NFFT; n++)
+                fft_in[n] = data[m][start + n];
+
+            fftw_execute(fplan);
+
+            /* Store transposed [block][bin][sensor] for cache-friendly beamform */
+            for (int k = 0; k < NFREQS; k++) {
+                sensor_fft_r[b][k][m] = fft_out[k][0];
+                sensor_fft_i[b][k][m] = fft_out[k][1];
+            }
+        }
+    }
+
+    printf("STFT time      : %.4f s\n", wall_sec() - fft_t0);
+
+    fftw_destroy_plan(fplan);
+    fftw_free(fft_in);
+    fftw_free(fft_out);
+
+    /* ── Pre-compute steering vectors W[a*NBIN+k][m] ─────────────────────── */
+    W_r = malloc(sizeof(*W_r) * NANGLES * NBIN);
+    W_i = malloc(sizeof(*W_i) * NANGLES * NBIN);
+    if (!W_r || !W_i) { perror("malloc steering"); return 1; }
+
+    for (int a = 0; a < NANGLES; a++) {
+        double theta     = a * M_PI / 180.0;
+        double cos_theta = cos(theta);
+
+        for (int k = 0; k < NBIN; k++) {
+            double f     = (k + SBIN) * FS / NFFT;
+            double omega = 2.0 * M_PI * f;
+            double *wr   = W_r[a * NBIN + k];
+            double *wi   = W_i[a * NBIN + k];
+
+            for (int m = 0; m < NSENSORS; m++) {
+                double phase = omega * (m * D * cos_theta) / C;
+                wr[m] =  cos(phase);   /* conjugate steering: delay = -phase */
+                wi[m] = -sin(phase);
+            }
+        }
+    }
+
+    /* ── Beamform + ISTFT (threaded) ─────────────────────────────────────── */
+    int nthreads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    if (nthreads < 1)  nthreads = 4;
+    if (nthreads > NANGLES) nthreads = NANGLES;
+
+    pthread_t     *threads     = malloc(sizeof(pthread_t)     * nthreads);
+    thread_data_t *thread_data = malloc(sizeof(thread_data_t) * nthreads);
+    if (!threads || !thread_data) { perror("malloc threads"); return 1; }
+
+    double beam_t0 = wall_sec();
+
+    int base = NANGLES / nthreads, extra = NANGLES % nthreads, next = 0;
+    for (int i = 0; i < nthreads; i++) {
+        thread_data[i].start_angle = next;
+        next += base + (i < extra ? 1 : 0);
+        thread_data[i].end_angle = next;
+        pthread_create(&threads[i], NULL, beamform_thread, &thread_data[i]);
+    }
+    for (int i = 0; i < nthreads; i++)
+        pthread_join(threads[i], NULL);
+
+    printf("Beamform+ISTFT : %.4f s  (%d threads)\n",
+           wall_sec() - beam_t0, nthreads);
+
+    /* ── Save DataPrev for next cycle (last OVRL samples of each sensor) ─── */
+    /*    In a real system: memcpy(DataPrev[m], &data[m][NSAMPLES], OVRL)     */
+    /*    Here we just note it — not written to disk.                         */
+
+    /* ── Write outputs ───────────────────────────────────────────────────── */
+    FILE *ofp = fopen("debugd", "wb");
+    if (!ofp) { perror("debugd"); return 1; }
+    fwrite(pwr, sizeof(double), NANGLES, ofp);
+    fclose(ofp);
+
+    FILE *bfp = fopen("beam_time", "wb");
+    if (!bfp) { perror("beam_time"); return 1; }
+    fwrite(beam_time, sizeof(double), NANGLES * NSAMPLES, bfp);
+    fclose(bfp);
+
+    printf("\nOutputs:\n");
+    printf("  debugd    – pwr[180]              (180 doubles)\n");
+    printf("  beam_time – beam_time[180][1024]  (184320 doubles)\n");
+
+    /* ── Cleanup ─────────────────────────────────────────────────────────── */
+    free(W_r);
+    free(W_i);
+    free(threads);
+    free(thread_data);
+    fftw_destroy_plan(shared_iplan);
+    fftw_cleanup();
+
+    return 0;
+}
